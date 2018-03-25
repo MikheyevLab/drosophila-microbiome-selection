@@ -1,0 +1,93 @@
+---
+title: "dsx RNA-seq analysis"
+author: "Jigyasa Arora and Sasha Mikheyev"
+date: "2/16/2018"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 5
+    theme: cerulean
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(cache=TRUE, fig.path='figures/', fig.width=5, fig.height=5 )
+```
+
+
+#generating the correct format for all the fly eclosion time files-
+
+```{r loadLibraries, message=FALSE}
+library("gridExtra")
+library("scales")
+library("RColorBrewer")
+library("tidyverse") #dplyr package included
+library(stringr)
+library(nlme)
+library(effects)
+```
+
+
+```{r loadData}
+flydata <- read_csv("flydata.csv") %>% mutate( line = paste(subreplicates, round, diet, conditions)) %>% select(time = emergence_time, diet, round, selection = conditions, line) %>% filter(diet != "control")
+
+flydata %>% filter(diet != "hsd")  %>% ggplot(aes(time, fill=diet))+geom_histogram(position="dodge")
+```
+
+## Exploratory analysis
+
+```{r plotData}
+ggplot(flydata, aes(as.factor(round), time, color=selection) )+geom_boxplot()+facet_grid(.~diet)
+
+ggplot(flydata, aes(as.factor(round), time,  color=selection) )+geom_boxplot()+facet_grid(diet~.)+theme_bw()
+
+ggplot(flydata, aes(selection, time, group = selection, color = selection))+ geom_jitter(alpha=.1,)+facet_grid(diet~as.factor(round))+theme_bw()
+```
+
+## Analalysis using vial as a random factor
+
+```{r modRandom}
+flydataFactors <- flydata %>% mutate(day = ifelse(time<225, 1, ifelse(time<240, 2, ifelse(time<270, 3, 4)))) %>% as.data.frame()
+flydataFactors$selection <- factor(flydataFactors$selection)
+flydataFactors$diet <- factor(flydataFactors$diet)
+flydataFactors$day <- factor(flydataFactors$day)
+mod2 <- lme(time ~ round * diet * selection , random=~1|line, method="ML", data = flydataFactors )
+summary(mod2)
+
+effect(term="round:selection", xlevels=list(selection=c("selection","noselection")), mod=mod2) %>% as.data.frame() %>% ggplot(aes(round,fit,color=selection))+geom_line()
+
+effect(term="round:diet", xlevels=list(diet=c("control","nsd")), mod=mod2) %>% as.data.frame() %>% ggplot(aes(round,fit,color=diet))+geom_line()
+
+effect(term="round:diet:selection", xlevels=list(selection=c("selection","noselection"),diet=c("control","nsd")), mod=mod2) %>% as.data.frame()%>% ggplot(aes(round,fit,color=selection,linetype=diet))+geom_line()
+
+effect(term="round:diet:selection", xlevels=list(selection=c("selection","noselection"),diet=c("control","nsd")), mod=mod2) %>% as.data.frame()%>% ggplot(aes(round,fit,color=selection,linetype=diet))+geom_line()+geom_ribbon(aes(ymin=lower,ymax=upper),alpha=0.3)+ facet_grid(diet~., scales="free")
+
+ggplot(flydataFactors, aes(day, fill=diet))+geom_histogram(stat="count")
+```
+
+
+## Subsetting diets
+
+```{r}
+nsd.mod <- lme(time ~ round * selection , random=~1|line, method="ML", data = flydataFactors %>% filter(diet == "nsd" & day == 3 ))
+summary(nsd.mod)
+
+effect(term="round:selection", xlevels=list(selection=c("selection","noselection")), mod=nsd.mod) %>% as.data.frame() %>% ggplot(aes(round, fit, color=selection))+geom_line()+geom_ribbon(aes(ymin=lower,ymax=upper),alpha=0.3)
+```
+
+## Analysis averaged by line
+
+```{r modAveraged}
+
+flydataFactors %>% group_by(line, diet, round, selection ) %>% summarise(time = min(time) ) %>% ggplot(aes(round, time, color=selection) )+geom_point()+facet_grid(.~diet)+geom_smooth(method = "lm")
+
+flydataFactors2 <- flydataFactors %>% group_by(line, diet, round, selection ) %>% summarise(mintime = min(time)) %>% mutate(day = ifelse(mintime<225, 1, ifelse(mintime<240, 2, ifelse(mintime<270, 3, 4))))
+flydataFactors2$day <- factor(flydataFactors2$day)
+
+flydataFactors %>% ggplot(aes(round, time, color=selection) )+geom_point()+facet_grid(.~diet)+geom_smooth(method = "lm")
+
+with(flydataFactors %>% group_by(line, diet, round, selection ) %>% summarise(mintime = min(time), avetime = mean(time)), cor.test(mintime, avetime))
+```
+
+Notes: 
+- Round 1 is the starting point.
