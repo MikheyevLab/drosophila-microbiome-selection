@@ -30,7 +30,8 @@ library(effects)
 
 
 ```{r loadData}
-flydata <- read_csv("data/flydata.csv") %>% mutate( line = paste(subreplicates, round, diet, conditions)) %>% select(time = emergence_time, diet, round, selection = conditions, line) %>% filter(diet != "control")
+flydata <- read_csv("data/flydata.csv") %>% 
+  separate(subreplicates, sep=1, into = c("replicate", "vial")) %>% mutate( line = paste(replicate, round, diet, conditions), replicate = paste(replicate, vial, round, diet, conditions)) %>% select(time = emergence_time, diet, round, selection = conditions, line, replicate) %>% filter(diet != "control")
 
 flydata %>% ggplot(aes(time, fill=selection))+geom_histogram(position="dodge") + facet_grid(.~diet)
 ```
@@ -43,30 +44,33 @@ ggplot(flydata, aes(as.factor(round), time, color=selection) )+geom_boxplot()+fa
 ggplot(flydata, aes(as.factor(round), time,  color=selection) )+geom_boxplot()+facet_grid(diet~.)+theme_bw()
 
 ggplot(flydata, aes(selection, time, group = selection, color = selection))+ geom_jitter(alpha=.1)+facet_grid(diet~as.factor(round))+theme_bw()
+
+ggplot(flydata, aes(round, time, group = selection, color = selection))+ geom_jitter(alpha=.1)+facet_grid(diet~., scales = "free")+theme_bw()+stat_smooth(method = "lm")
 ```
 
-## Analalysis using vial as a random factor
+## Mixed model analysis
 
 ```{r modRandom}
 flydataFactors <- flydata %>% mutate(day = ifelse(time<225, 1, ifelse(time<240, 2, ifelse(time<270, 3, 4)))) %>% as.data.frame()
 flydataFactors$selection <- factor(flydataFactors$selection)
 flydataFactors$diet <- factor(flydataFactors$diet)
 flydataFactors$day <- factor(flydataFactors$day)
-mod2 <- lme(time ~ round * diet * selection , random=~1|line, method="ML", data = flydataFactors )
+mod2 <- lme(time ~ round * diet * selection , random=~1|line/replicate, method="REML", data = flydataFactors )
 summary(mod2)
+hist(resid(mod2))
 
 effect(term="round:selection", xlevels=list(selection=c("selection","noselection")), mod=mod2) %>% as.data.frame() %>% ggplot(aes(round,fit,color=selection))+geom_line()
 
 effect(term="round:diet", xlevels=list(diet=c("control","nsd")), mod=mod2) %>% as.data.frame() %>% ggplot(aes(round,fit,color=diet))+geom_line()
 
-effect(term="round:diet:selection", xlevels=list(selection=c("selection","noselection"),diet=c("control","nsd")), mod=mod2) %>% as.data.frame()%>% ggplot(aes(round,fit,color=selection,linetype=diet))+geom_line()
+effect(term="round:diet:selection", xlevels=list(selection=c("selection","noselection"),diet=c("control","nsd")), mod=mod2) %>% as.data.frame()%>%
+  ggplot(aes(round,fit,color=selection,linetype=diet))+geom_line()
 
-effect(term="round:diet:selection", xlevels=list(selection=c("selection","noselection"),diet=c("control","nsd")), mod=mod2) %>% as.data.frame()%>% ggplot(aes(round,fit,color=selection,linetype=diet))+geom_line()+geom_ribbon(aes(ymin=lower,ymax=upper),alpha=0.3)+ facet_grid(diet~., scales="free")
+effect(term="round:diet:selection", xlevels=list(selection=c("selection","noselection"),diet=c("control","nsd")), mod=mod2) %>% as.data.frame()%>% ggplot(aes(round,fit,color=selection,linetype=diet))+geom_line()+geom_ribbon(aes(ymin=lower,ymax=upper),alpha=0.3)+ facet_grid(diet~., scales="free") # plot fitted values with confidence intervals
 
-ggplot(flydataFactors, aes(day, fill=selection))+geom_histogram(stat="count", position="dodge") +facet_grid(.~diet)
+ggplot(flydataFactors, aes(day, fill=selection))+geom_histogram(stat="count", position="dodge") +facet_grid(.~diet) 
 
-flydata %>% group_by(diet, round, selection, line) %>% summarize(time = mean(time), flies = n())%>% filter(round == 5) %>% ggplot(aes(time, flies, color = round)) + geom_point() + facet_grid(.~diet, scales = "free") + stat_smooth(method="lm")
-
+flydata %>% group_by(diet, round, selection, line, replicate) %>% summarize(time = mean(time), flies = n()) %>% filter(round == 5) %>% ggplot(aes(time, flies, color = selection, shape = as.factor(round))) + geom_point() + facet_grid(.~diet, scales = "free") + stat_smooth(method="lm", aes(group = 1))
 ```
 
 # Microbial analysis
@@ -75,9 +79,36 @@ flydata %>% group_by(diet, round, selection, line) %>% summarize(time = mean(tim
 ```{r}
 library(qiime2R)
 library(phyloseq)
-microbedat <- qza_to_phyloseq(features = "data/table.qza", taxonomy="data/taxonomy.qza", tree = "data/rooted-tree.qza", metadata = "data/metadata.txt") %>% subset_samples(Diet != "CD")
+library(DivNet)
+library(vegan)
+# microbedat <- qza_to_phyloseq(features = "data/table.qza", taxonomy="data/taxonomy.qza", tree = "data/rooted-tree.qza", metadata = "data/metadata.txt") %>% subset_samples(Diet != "CD")
+otus <- read_qza("data/table.qza")
+taxonomy <- read_qza("data/taxonomy.qza")
+tree<-read_qza("data/rooted-tree.qza")
+taxonomy<-read_qza("data/taxonomy.qza")
+tax_table <- data.frame(taxon = as.character(taxonomy$data$Taxon)) %>%  separate(taxon, c("Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species"), sep = ";") %>% mutate_all(funs(gsub(".*__", "", .))) 
+rownames(tax_table) <- taxonomy$data$Feature.ID
+tax_table <- as.matrix(tax_table)
+metadata <- read.table("data/metadata.txt", sep='\t', header=T, row.names = 1, comment="")
+microbedat <- phyloseq(otu_table(otus$data, taxa_are_rows = T), phy_tree(tree$data), tax_table(tax_table), sample_data(metadata)) %>% subset_samples(Diet != "CD")
 
+abundantClasses <- psmelt(microbedat) %>% group_by(Class) %>% summarize(frac = n() / nrow(.)) %>% filter(frac > 0.01) %>% na.omit() %>% pull(Class)
+
+psmelt(microbedat) %>% filter(Class %in% abundantClasses) %>% ggplot(aes_string(x = "Round", y = "Abundance", fill = "Class")) + geom_bar(stat = "identity", position = "fill") + theme(axis.text.x = element_text(angle = -90, hjust = 0)) + facet_grid(Diet~Selection) + scale_y_sqrt() + ylab("Fraction") + xlab("Round of selection")
+
+divnet_phylum_nsd <-  divnet(tax_glom(subset_samples(microbedat, Diet == "NSD"), taxrank = "Genus"), X = "Round", ncores = 4)
+divnet_phylum_hsd <-  divnet(tax_glom(subset_samples(microbedat, Diet == "HSD"), taxrank = "Genus" ), X = "Round", ncores = 4)
+testDiversity(divnet_phylum_hsd)
+testDiversity(divnet_phylum_nsd)
+plot(divnet_phylum_hsd)
+plot(divnet_phylum_nsd)
 plot_richness(microbedat, "Round", measures = "Shannon", color = "Selection") + facet_grid(Diet~., scales = "free_y") + stat_smooth(method="lm") + theme_minimal()
+```
 
+## Examining microbial community differentiation as in one model
 
+```{r adonis}
+d = UniFrac(tax_glom(microbedat, taxrank = "Genus"), weighted = T)
+df = as(sample_data(microbedat), "data.frame")
+(microbes.adonis <- adonis2(d ~ Diet * Selection * Round, df, permutations = 10000))
 ```
