@@ -14,8 +14,9 @@ output:
 knitr::opts_chunk$set(cache=TRUE, fig.path='figures/', fig.width=5, fig.height=5 )
 ```
 
+# Phenotypic analysis
 
-#generating the correct format for all the fly eclosion time files-
+generating the correct format for all the fly eclosion time files-
 
 ```{r loadLibraries, message=FALSE}
 library("gridExtra")
@@ -29,9 +30,9 @@ library(effects)
 
 
 ```{r loadData}
-flydata <- read_csv("flydata.csv") %>% mutate( line = paste(subreplicates, round, diet, conditions)) %>% select(time = emergence_time, diet, round, selection = conditions, line) %>% filter(diet != "control")
+flydata <- read_csv("data/flydata.csv") %>% mutate( line = paste(subreplicates, round, diet, conditions)) %>% select(time = emergence_time, diet, round, selection = conditions, line) %>% filter(diet != "control")
 
-flydata %>% filter(diet != "hsd")  %>% ggplot(aes(time, fill=diet))+geom_histogram(position="dodge")
+flydata %>% ggplot(aes(time, fill=selection))+geom_histogram(position="dodge") + facet_grid(.~diet)
 ```
 
 ## Exploratory analysis
@@ -41,7 +42,7 @@ ggplot(flydata, aes(as.factor(round), time, color=selection) )+geom_boxplot()+fa
 
 ggplot(flydata, aes(as.factor(round), time,  color=selection) )+geom_boxplot()+facet_grid(diet~.)+theme_bw()
 
-ggplot(flydata, aes(selection, time, group = selection, color = selection))+ geom_jitter(alpha=.1,)+facet_grid(diet~as.factor(round))+theme_bw()
+ggplot(flydata, aes(selection, time, group = selection, color = selection))+ geom_jitter(alpha=.1)+facet_grid(diet~as.factor(round))+theme_bw()
 ```
 
 ## Analalysis using vial as a random factor
@@ -62,32 +63,21 @@ effect(term="round:diet:selection", xlevels=list(selection=c("selection","nosele
 
 effect(term="round:diet:selection", xlevels=list(selection=c("selection","noselection"),diet=c("control","nsd")), mod=mod2) %>% as.data.frame()%>% ggplot(aes(round,fit,color=selection,linetype=diet))+geom_line()+geom_ribbon(aes(ymin=lower,ymax=upper),alpha=0.3)+ facet_grid(diet~., scales="free")
 
-ggplot(flydataFactors, aes(day, fill=diet))+geom_histogram(stat="count")
+ggplot(flydataFactors, aes(day, fill=selection))+geom_histogram(stat="count", position="dodge") +facet_grid(.~diet)
+
+flydata %>% group_by(diet, round, selection, line) %>% summarize(time = mean(time), flies = n())%>% filter(round == 5) %>% ggplot(aes(time, flies, color = round)) + geom_point() + facet_grid(.~diet, scales = "free") + stat_smooth(method="lm")
+
 ```
 
+# Microbial analysis
 
-## Subsetting diets
 
 ```{r}
-nsd.mod <- lme(time ~ round * selection , random=~1|line, method="ML", data = flydataFactors %>% filter(diet == "nsd" & day == 3 ))
-summary(nsd.mod)
+library(qiime2R)
+library(phyloseq)
+microbedat <- qza_to_phyloseq(features = "data/table.qza", taxonomy="data/taxonomy.qza", tree = "data/rooted-tree.qza", metadata = "data/metadata.txt") %>% subset_samples(Diet != "CD")
 
-effect(term="round:selection", xlevels=list(selection=c("selection","noselection")), mod=nsd.mod) %>% as.data.frame() %>% ggplot(aes(round, fit, color=selection))+geom_line()+geom_ribbon(aes(ymin=lower,ymax=upper),alpha=0.3)
+plot_richness(microbedat, "Round", measures = "Shannon", color = "Selection") + facet_grid(Diet~., scales = "free_y") + stat_smooth(method="lm") + theme_minimal()
+
+
 ```
-
-## Analysis averaged by line
-
-```{r modAveraged}
-
-flydataFactors %>% group_by(line, diet, round, selection ) %>% summarise(time = min(time) ) %>% ggplot(aes(round, time, color=selection) )+geom_point()+facet_grid(.~diet)+geom_smooth(method = "lm")
-
-flydataFactors2 <- flydataFactors %>% group_by(line, diet, round, selection ) %>% summarise(mintime = min(time)) %>% mutate(day = ifelse(mintime<225, 1, ifelse(mintime<240, 2, ifelse(mintime<270, 3, 4))))
-flydataFactors2$day <- factor(flydataFactors2$day)
-
-flydataFactors %>% ggplot(aes(round, time, color=selection) )+geom_point()+facet_grid(.~diet)+geom_smooth(method = "lm")
-
-with(flydataFactors %>% group_by(line, diet, round, selection ) %>% summarise(mintime = min(time), avetime = mean(time)), cor.test(mintime, avetime))
-```
-
-Notes: 
-- Round 1 is the starting point.
