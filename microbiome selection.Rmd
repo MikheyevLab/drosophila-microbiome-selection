@@ -75,8 +75,9 @@ flydata %>% group_by(diet, round, selection, line, replicate) %>% summarize(time
 
 # Microbial analysis
 
+## Load data manually from qiime2
 
-```{r}
+```{r microbial}
 library(qiime2R)
 library(phyloseq)
 library(DivNet)
@@ -91,19 +92,28 @@ rownames(tax_table) <- taxonomy$data$Feature.ID
 tax_table <- as.matrix(tax_table)
 metadata <- read.table("data/metadata.txt", sep='\t', header=T, row.names = 1, comment="")
 microbedat <- phyloseq(otu_table(otus$data, taxa_are_rows = T), phy_tree(tree$data), tax_table(tax_table), sample_data(metadata)) %>% subset_samples(Diet != "CD")
+```
 
+## Alpha diversity
+```{r alpha, message = FALSE, warning = FALSE, results = 'hide' }
 abundantClasses <- psmelt(microbedat) %>% group_by(Class) %>% summarize(frac = n() / nrow(.)) %>% filter(frac > 0.01) %>% na.omit() %>% pull(Class)
 
 psmelt(microbedat) %>% filter(Class %in% abundantClasses) %>% ggplot(aes_string(x = "Round", y = "Abundance", fill = "Class")) + geom_bar(stat = "identity", position = "fill") + theme(axis.text.x = element_text(angle = -90, hjust = 0)) + facet_grid(Diet~Selection) + scale_y_sqrt() + ylab("Fraction") + xlab("Round of selection")
 
 divnet_phylum_nsd <-  divnet(tax_glom(subset_samples(microbedat, Diet == "NSD"), taxrank = "Genus"), X = "Round", ncores = 4)
 divnet_phylum_hsd <-  divnet(tax_glom(subset_samples(microbedat, Diet == "HSD"), taxrank = "Genus" ), X = "Round", ncores = 4)
-testDiversity(divnet_phylum_hsd)
-testDiversity(divnet_phylum_nsd)
 plot(divnet_phylum_hsd)
 plot(divnet_phylum_nsd)
 plot_richness(microbedat, "Round", measures = "Shannon", color = "Selection") + facet_grid(Diet~., scales = "free_y") + stat_smooth(method="lm") + theme_minimal()
 ```
+
+
+```{r testDiversity}
+testDiversity(divnet_phylum_hsd)
+testDiversity(divnet_phylum_nsd)
+```
+
+In both cases diversity is not equal to zero
 
 ## Examining microbial community differentiation as in one model
 
