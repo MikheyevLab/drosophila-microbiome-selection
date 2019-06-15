@@ -30,8 +30,7 @@ library(effects)
 
 
 ```{r loadData}
-flydata <- read_csv("data/flydata.csv") %>% 
-  separate(subreplicates, sep=1, into = c("replicate", "vial")) %>% mutate( line = paste(replicate, round, diet, conditions), replicate = paste(replicate, vial, round, diet, conditions)) %>% select(time = emergence_time, diet, round, selection = conditions, line, replicate) %>% filter(diet != "control")
+flydata <- read_csv("data/flydata.csv") %>% mutate(id = paste(diet, selection, round, line, vial), time = emergence_time, replicate = paste(diet, selection, round, line))
 
 flydata %>% ggplot(aes(time, fill=selection))+geom_histogram(position="dodge") + facet_grid(.~diet)
 ```
@@ -55,7 +54,7 @@ flydataFactors <- flydata %>% mutate(day = ifelse(time<225, 1, ifelse(time<240, 
 flydataFactors$selection <- factor(flydataFactors$selection)
 flydataFactors$diet <- factor(flydataFactors$diet)
 flydataFactors$day <- factor(flydataFactors$day)
-mod2 <- lme(time ~ round * diet * selection , random=~1|line/replicate, method="REML", data = flydataFactors )
+mod2 <- lme(time ~ round * diet * selection , random=~1|line/replicate, method="REML", data = flydata )
 summary(mod2)
 hist(resid(mod2))
 
@@ -90,35 +89,71 @@ taxonomy<-read_qza("data/taxonomy.qza")
 tax_table <- data.frame(taxon = as.character(taxonomy$data$Taxon)) %>%  separate(taxon, c("Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species"), sep = ";") %>% mutate_all(funs(gsub(".*__", "", .))) 
 rownames(tax_table) <- taxonomy$data$Feature.ID
 tax_table <- as.matrix(tax_table)
-metadata <- read.table("data/metadata.txt", sep='\t', header=T, row.names = 1, comment="")
-microbedat <- phyloseq(otu_table(otus$data, taxa_are_rows = T), phy_tree(tree$data), tax_table(tax_table), sample_data(metadata)) %>% subset_samples(Diet != "CD")
+# loading metadata
+metadata <- read.table("data/metadata.txt", sep='\t', header=T, row.names = 1, comment="") 
+   # create a bunch of category columns for divnet and append phenotypic data
+metadata <- metadata %>% 
+  mutate( sample_names = rownames(metadata), 
+          roundSelection = paste(round, selection), 
+          roundSelectionDiet = paste(round, selection, diet),  
+          id = paste(diet, selection, round, line, vial)) %>%
+  left_join(flydata %>% group_by(id) %>% summarize(time = mean(time))) 
+rownames(metadata) <- metadata$sample_names 
+
+# make final product
+microbedat <- phyloseq(otu_table(otus$data, taxa_are_rows = T), phy_tree(tree$data), tax_table(tax_table), sample_data(metadata))
 ```
 
 ## Alpha diversity
+
+# Descriptive bar plots
+
+These are not super-useful, but highlight the difference between diets
+
 ```{r alpha, message = FALSE, warning = FALSE, results = 'hide' }
-abundantClasses <- psmelt(microbedat) %>% group_by(Class) %>% summarize(frac = n() / nrow(.)) %>% filter(frac > 0.01) %>% na.omit() %>% pull(Class)
+abundantClasses <- psmelt(microbedat) %>% group_by(Genus) %>% summarize(frac = n() / nrow(.)) %>% filter(frac > 0.01) %>% na.omit() %>% pull(Genus)
 
-psmelt(microbedat) %>% filter(Class %in% abundantClasses) %>% ggplot(aes_string(x = "Round", y = "Abundance", fill = "Class")) + geom_bar(stat = "identity", position = "fill") + theme(axis.text.x = element_text(angle = -90, hjust = 0)) + facet_grid(Diet~Selection) + scale_y_sqrt() + ylab("Fraction") + xlab("Round of selection")
-
-divnet_phylum_nsd <-  divnet(tax_glom(subset_samples(microbedat, Diet == "NSD"), taxrank = "Genus"), X = "Round", ncores = 4)
-divnet_phylum_hsd <-  divnet(tax_glom(subset_samples(microbedat, Diet == "HSD"), taxrank = "Genus" ), X = "Round", ncores = 4)
-plot(divnet_phylum_hsd)
-plot(divnet_phylum_nsd)
-plot_richness(microbedat, "Round", measures = "Shannon", color = "Selection") + facet_grid(Diet~., scales = "free_y") + stat_smooth(method="lm") + theme_minimal()
+psmelt(microbedat) %>% filter(Genus %in% abundantClasses) %>% ggplot(aes_string(x = "round", y = "Abundance", fill = "Genus")) + geom_bar(stat = "identity", position = "fill") + theme(axis.text.x = element_text(angle = -90, hjust = 0)) + facet_grid(diet~selection) + scale_y_sqrt() + ylab("Fraction") + xlab("Round of selection")
 ```
 
+```{r divnetAll, cache=T}
+divnet_all <-  divnet(tax_glom(microbedat, taxrank = "Genus"), X = "roundSelectionDiet", ncores = 20)
 
-```{r testDiversity}
-testDiversity(divnet_phylum_hsd)
-testDiversity(divnet_phylum_nsd)
+divnet_all$shannon %>% summary %>% left_join(metadata) %>% group_by(roundSelectionDiet) %>% summarize(alpha = estimate[1], lower = lower[1], upper = upper[1], round = round[1], selection = selection[1], diet = diet[1]) %>% ggplot(aes(selection, alpha, color = selection)) + geom_point() + geom_linerange(aes(ymin = lower, ymax = upper)) + facet_grid(diet~round, scales = "free") + theme_minimal() 
 ```
 
-In both cases diversity is not equal to zero
+### Alpha diversity using a less sophisticated approach
+```{r}
+plot_richness(microbedat, "round", measures = "Shannon", color = "selection") + facet_grid(diet~., scales = "free_y") + stat_smooth(method="lm") + theme_minimal()
+```
 
 ## Examining microbial community differentiation as in one model
 
 ```{r adonis}
-d = UniFrac(tax_glom(microbedat, taxrank = "Genus"), weighted = T)
-df = as(sample_data(microbedat), "data.frame")
-(microbes.adonis <- adonis2(d ~ Diet * Selection * Round, df, permutations = 10000))
+d = UniFrac(tax_glom(microbedat, taxrank = "Genus"))
+d.mds <- metaMDS(d, zerodist=ignore)
+cbind(metadata, data.frame(MDS1 = d.dist$points[,1], MDS2 = d.dist$points[,2])) %>% ggplot(aes(MDS1, MDS2, color = as.factor(round), shape = selection)) + geom_point() + facet_wrap(~diet) + scale_colour_brewer(palette = "YlOrRd")
+(microbes.adonis <- adonis2(d ~ diet * selection * round, as(sample_data(microbedat), "data.frame"), permutations = 10000, strata = line))
+
+# to do https://stackoverflow.com/questions/47516448/how-to-get-ordispider-like-clusters-in-ggplot-with-nmds
+```
+
+Looks like a major effect of diet (as expected), and an interaction with round, suggesting different patterns of evolution over time as a function of diet. Interestingly, doesn't seem to be a main effect of round.
+
+```{r}
+library(DESeq2)
+microbedat.phyloseq <- phyloseq_to_deseq2(subset_samples(microbedat, diet == "hsd" & time > 0), ~  time )
+microbedat.phyloseq.time <- results(DESeq(microbedat.phyloseq, test="LRT", fitType="local", reduced = ~ 1))
+head(microbedat.phyloseq.time[order(microbedat.phyloseq.time$pvalue),])
+
+
+microbedat.phyloseq.round <- results(DESeq(microbedat.phyloseq, test="LRT", fitType="local", reduced = ~ selection + line))
+head(microbedat.phyloseq.round[order(microbedat.phyloseq.round$pvalue),])
+
+microbedat.phyloseq <- phyloseq_to_deseq2(tax_glom(subset_samples(microbedat, diet == "hsd"), taxrank = "Genus"), ~  round + selection + line)
+microbedat.phyloseq.selection <- results(DESeq(microbedat.phyloseq, test="LRT", fitType="local", reduced = ~ round + line))
+head(microbedat.phyloseq.selection[order(microbedat.phyloseq.selection$pvalue),])
+
+microbedat.phyloseq.round <- results(DESeq(microbedat.phyloseq, test="LRT", fitType="local", reduced = ~ selection + line))
+head(microbedat.phyloseq.round[order(microbedat.phyloseq.round$pvalue),])
 ```
