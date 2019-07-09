@@ -19,32 +19,22 @@ knitr::opts_chunk$set(cache=TRUE, fig.path='figures/', fig.width=5, fig.height=5
 generating the correct format for all the fly eclosion time files-
 
 ```{r loadLibraries, message=FALSE}
-library("gridExtra")
-library("scales")
-library("RColorBrewer")
-library("tidyverse") #dplyr package included
+library(knitr)
+library(kableExtra)
+library(gridExtra)
+library(scales)
+library(RColorBrewer)
+library(tidyverse) #dplyr package included
 library(stringr)
 library(nlme)
 library(effects)
+
+theme_set(theme_minimal() + theme(legend.position = "bottom", axis.title =  element_text(size = 20), axis.text =  element_text(size = 10), strip.text = element_text(size = 20)))
 ```
 
 
 ```{r loadData}
 flydata <- read_csv("data/flydata.csv") %>% mutate(id = paste(diet, selection, round, line, vial), time = emergence_time, replicate = paste(diet, selection, round, line))
-
-flydata %>% ggplot(aes(time, fill=selection))+geom_histogram(position="dodge") + facet_grid(.~diet)
-```
-
-## Exploratory analysis
-
-```{r plotData}
-ggplot(flydata, aes(as.factor(round), time, color=selection) )+geom_boxplot()+facet_grid(.~diet)
-
-ggplot(flydata, aes(as.factor(round), time,  color=selection) )+geom_boxplot()+facet_grid(diet~.)+theme_bw()
-
-ggplot(flydata, aes(selection, time, group = selection, color = selection))+ geom_jitter(alpha=.1)+facet_grid(diet~as.factor(round))+theme_bw()
-
-ggplot(flydata, aes(round, time, group = selection, color = selection))+ geom_jitter(alpha=.1)+facet_grid(diet~., scales = "free")+theme_bw()+stat_smooth(method = "lm")
 ```
 
 ## Mixed model analysis
@@ -53,30 +43,61 @@ ggplot(flydata, aes(round, time, group = selection, color = selection))+ geom_ji
 flydataFactors <- flydata %>% mutate(day = ifelse(time<225, 1, ifelse(time<240, 2, ifelse(time<270, 3, 4)))) %>% as.data.frame()
 flydataFactors$selection <- factor(flydataFactors$selection)
 flydataFactors$diet <- factor(flydataFactors$diet)
-flydataFactors$day <- factor(flydataFactors$day)
-mod2 <- lme(time ~ round * diet * selection , random=~1|line/replicate, method="REML", data = flydata )
-summary(mod2)
-hist(resid(mod2))
+mod <- lme(time ~ round * diet * selection , random=~1|line/replicate, method="REML", data = flydata )
+summary(mod)
+hist(resid(mod))
 
-effect(term="round:selection", xlevels=list(selection=c("selection","noselection")), mod=mod2) %>% as.data.frame() %>% ggplot(aes(round,fit,color=selection))+geom_line()
+effect(term="round:selection", xlevels=list(selection=c("selection","noselection")), mod=mod) %>% as.data.frame() %>% ggplot(aes(round,fit,color=selection))+geom_line()
 
-effect(term="round:diet", xlevels=list(diet=c("control","nsd")), mod=mod2) %>% as.data.frame() %>% ggplot(aes(round,fit,color=diet))+geom_line()
+effect(term="round:diet", xlevels=list(diet=c("control","nsd")), mod=mod) %>% as.data.frame() %>% ggplot(aes(round,fit,color=diet))+geom_line()
 
-effect(term="round:diet:selection", xlevels=list(selection=c("selection","noselection"),diet=c("control","nsd")), mod=mod2) %>% as.data.frame()%>%
+effect(term="round:diet:selection", xlevels=list(selection=c("selection","noselection"),diet=c("control","nsd")), mod=mod) %>% as.data.frame()%>%
   ggplot(aes(round,fit,color=selection,linetype=diet))+geom_line()
 
-effect(term="round:diet:selection", xlevels=list(selection=c("selection","noselection"),diet=c("control","nsd")), mod=mod2) %>% as.data.frame()%>% ggplot(aes(round,fit,color=selection,linetype=diet))+geom_line()+geom_ribbon(aes(ymin=lower,ymax=upper),alpha=0.3)+ facet_grid(diet~., scales="free") # plot fitted values with confidence intervals
+diet_labeller <- function(variable, value) {
+  diet_names <- list('nsd'='No-sugar diet', 'hsd'='High-sugar diet')
+  selection_names <- list('selection'='Selection', 'noselection'='No Selection')
+  if (variable == 'selection')
+    return(selection_names[value])
+  else if (variable == 'diet') 
+    return(diet_names[value])
+  else
+    return(as.character(value))
+}
+effect(term="round:diet:selection", xlevels=list(selection=c("selection","noselection"),diet=c("control","nsd")), mod=mod) %>%
+  as.data.frame() %>% 
+  left_join(flydata, by = c("round", "diet", "selection")) %>% 
+  ggplot(aes(round-1, fit, color=selection)) + geom_boxplot(aes(round-1, time, group = interaction(round,selection)), alpha = 0.1) +
+  geom_line() + geom_ribbon(aes(ymin=lower,ymax=upper, linetype = NA), alpha=0.3) + 
+  facet_grid(diet~., scales="free", labeller=diet_labeller) + 
+  scale_color_manual(name = "Selection", labels = c("Random selection control", "Mean eclosion time"), values = c("dodgerblue", "orange")) + ylab("Eclosion time (hours)") + xlab("Round of selection") + guides(alpha = F, color=guide_legend(override.aes=list(fill=NA))) 
+
+effect(xlevels=list(round=c(1,5)), term="round:diet",  mod=mod) %>% as.data.frame()
+
+#ggsave("figures/modeFit.pdf", height=7, width =5)
 
 ggplot(flydataFactors, aes(day, fill=selection))+geom_histogram(stat="count", position="dodge") +facet_grid(.~diet) 
 
-flydata %>% group_by(diet, round, selection, line, replicate) %>% summarize(time = mean(time), flies = n()) %>% filter(round == 5) %>% ggplot(aes(time, flies, color = selection, shape = as.factor(round))) + geom_point() + facet_grid(.~diet, scales = "free") + stat_smooth(method="lm", aes(group = 1))
+tradeoff <- flydata %>% group_by(diet, round, selection, line, replicate) %>% summarize(time = mean(time), flies = n()) 
+tradeoff %>% filter(round == 5) %>% ggplot(aes(time, flies, color = selection, shape = as.factor(round))) + geom_point() + facet_grid(.~diet, scales = "free") + stat_smooth(method="lm", aes(group = 1)) 
 ```
+
+Selection has no effect on fly emergence, though emergence time decreases throughout the experiment in any case.
+
+In round 4 there are no flies eclosing in the fourth day. Maybe some problem? Does this affect results?
+
+```{r check4}
+mod2 <- lme(time ~ round * diet * selection , random=~1|line/replicate, method="REML", data = flydata %>% filter(round != 4))
+summary(mod2)
+```
+
+The model is robust to dropping this round entirely
 
 # Microbial analysis
 
 ## Load data manually from qiime2
 
-```{r microbial}
+```{r microbial, message=F}
 library(qiime2R)
 library(phyloseq)
 library(DivNet)
@@ -94,9 +115,11 @@ metadata <- read.table("data/metadata.txt", sep='\t', header=T, row.names = 1, c
    # create a bunch of category columns for divnet and append phenotypic data
 metadata <- metadata %>% 
   mutate( sample_names = rownames(metadata), 
+          round = round - 1,
           roundSelection = paste(round, selection), 
           roundSelectionDiet = paste(round, selection, diet),  
-          id = paste(diet, selection, round, line, vial)) %>%
+          id = paste(diet, selection, round, line, vial),
+          line = factor(line)) %>%
   left_join(flydata %>% group_by(id) %>% summarize(time = mean(time))) 
 rownames(metadata) <- metadata$sample_names 
 
@@ -104,56 +127,122 @@ rownames(metadata) <- metadata$sample_names
 microbedat <- phyloseq(otu_table(otus$data, taxa_are_rows = T), phy_tree(tree$data), tax_table(tax_table), sample_data(metadata))
 ```
 
-## Alpha diversity
-
-# Descriptive bar plots
+### Descriptive bar plots
 
 These are not super-useful, but highlight the difference between diets
 
 ```{r alpha, message = FALSE, warning = FALSE, results = 'hide' }
 abundantClasses <- psmelt(microbedat) %>% group_by(Genus) %>% summarize(frac = n() / nrow(.)) %>% filter(frac > 0.01) %>% na.omit() %>% pull(Genus)
 
-psmelt(microbedat) %>% filter(Genus %in% abundantClasses) %>% ggplot(aes_string(x = "round", y = "Abundance", fill = "Genus")) + geom_bar(stat = "identity", position = "fill") + theme(axis.text.x = element_text(angle = -90, hjust = 0)) + facet_grid(diet~selection) + scale_y_sqrt() + ylab("Fraction") + xlab("Round of selection")
+psmelt(microbedat) %>% mutate(round = round ) %>%filter(Genus %in% abundantClasses) %>% ggplot(aes_string(x = "round", y = "Abundance", fill = "Genus")) + geom_bar(stat = "identity", position = "fill") + theme(axis.text.x = element_text(angle = -90, hjust = 0)) + scale_y_sqrt() + ylab("Fraction of community") + xlab("Round of selection") + facet_grid(diet~selection, scales="free", labeller=diet_labeller) + scale_fill_brewer(palette = "Set3")
+#ggsave("figures/barplot.pdf", height = 7, width = 7)
 ```
 
-```{r divnetAll, cache=T}
+## Alpha diversity
+
+```{r divnetAll, cache=T, message=F}
 divnet_all <-  divnet(tax_glom(microbedat, taxrank = "Genus"), X = "roundSelectionDiet", ncores = 20)
 
-divnet_all$shannon %>% summary %>% left_join(metadata) %>% group_by(roundSelectionDiet) %>% summarize(alpha = estimate[1], lower = lower[1], upper = upper[1], round = round[1], selection = selection[1], diet = diet[1]) %>% ggplot(aes(selection, alpha, color = selection)) + geom_point() + geom_linerange(aes(ymin = lower, ymax = upper)) + facet_grid(diet~round, scales = "free") + theme_minimal() 
+divnet_summary <- divnet_all$shannon %>% summary %>% left_join(metadata) %>% group_by(roundSelectionDiet) %>% summarize(alpha = estimate[1], lower = lower[1], upper = upper[1], round = round[1], selection = selection[1], diet = diet[1]) 
+
+divnet_summary %>% ggplot(aes(selection, alpha, color = selection)) + geom_point() + geom_linerange(aes(ymin = lower, ymax = upper)) + facet_grid(diet~round, scales = "free") + theme_minimal() + theme(axis.text.x=element_blank()) + xlab("Round of evolution") + guides(color = F)
+
+#ggsave("figures/divnet.pdf")
+summary(lm(alpha ~ round + diet + selection,  data=divnet_summary))
 ```
+
 
 ### Alpha diversity using a less sophisticated approach
-```{r}
-plot_richness(microbedat, "round", measures = "Shannon", color = "selection") + facet_grid(diet~., scales = "free_y") + stat_smooth(method="lm") + theme_minimal()
+```{r naiveRichness}
+plot_richness(microbedat, "round", measures = "Shannon", color = "selection") + facet_grid(diet~., scales = "free_y", labeller=diet_labeller) + stat_smooth(method="lm")  + scale_color_manual(name = "Selection", labels = c("Random selection control", "Mean eclosion time"), values = c("dodgerblue", "orange")) + ylab("Shannon diversity") + xlab("Round of selection") + theme(axis.text.x = element_text(angle = 0, hjust = 0)) 
+
+#ggsave("figures/shannon.pdf", height = 6, width = 6)
 ```
 
-## Examining microbial community differentiation as in one model
+## Examining microbial community differentiation as in the mixed model
 
 ```{r adonis}
-d = UniFrac(tax_glom(microbedat, taxrank = "Genus"))
+d = UniFrac(tax_glom(microbedat, taxrank = "Family"))
 d.mds <- metaMDS(d, zerodist=ignore)
-cbind(metadata, data.frame(MDS1 = d.dist$points[,1], MDS2 = d.dist$points[,2])) %>% ggplot(aes(MDS1, MDS2, color = as.factor(round), shape = selection)) + geom_point() + facet_wrap(~diet) + scale_colour_brewer(palette = "YlOrRd")
+
+scrs <- cbind(metadata, data.frame(MDS1 = d.mds$points[,1], MDS2 = d.mds$points[,2])) 
+
+cent <- cbind(metadata, data.frame(MDS1 = d.mds$points[,1], MDS2 = d.mds$points[,2])) %>% aggregate(cbind(MDS1, MDS2) ~ diet + round + selection, data = ., FUN = mean) 
+
+segs <- merge(scrs, setNames(cent, c('diet', 'round','selection' ,'oNMDS1','oNMDS2')),
+              by = c('diet', 'round', 'selection'), sort = FALSE)
+
+ggplot(scrs, aes(x = MDS1, y = MDS2, shape = selection, color = factor(round))) +
+  facet_wrap(~diet) + scale_colour_brewer(palette = "YlOrRd") + 
+  geom_segment(data = segs,
+               mapping = aes(xend = oNMDS1, yend = oNMDS2)) + # spiders
+  geom_point(data = cent, size = 3) +                         # centroids
+  geom_point() +                                              # sample scores
+  coord_fixed()                                               # same axis scaling
+
 (microbes.adonis <- adonis2(d ~ diet * selection * round, as(sample_data(microbedat), "data.frame"), permutations = 10000, strata = line))
 
-# to do https://stackoverflow.com/questions/47516448/how-to-get-ordispider-like-clusters-in-ggplot-with-nmds
+anova(betadisper(d, sample_data(microbedat)$diet))
+plot(betadisper(d, sample_data(microbedat)$diet))
 ```
 
-Looks like a major effect of diet (as expected), and an interaction with round, suggesting different patterns of evolution over time as a function of diet. Interestingly, doesn't seem to be a main effect of round.
+There are dispersion differences between the diets, so let's analyze them separately
+
+### HSD permutation test
 
 ```{r}
+microbedat.hsd <- tax_glom(subset_samples(microbedat, diet == "hsd"), taxrank = "Family")  
+d.hsd = UniFrac(microbedat.hsd)
+(hsd.adonis <- adonis2(d.hsd ~  selection * round, as(sample_data(microbedat.hsd), "data.frame"), permutations = 10000, strata = line))
+```
+
+### NSD permutation test
+
+```{r}
+microbedat.nsd <- tax_glom(subset_samples(microbedat, diet == "nsd"), taxrank = "Family")  
+d.nsd = UniFrac(microbedat.nsd)
+(hsd.adonis <- adonis2(d.nsd ~  selection * round, as(sample_data(microbedat.nsd), "data.frame"), permutations = 10000, strata = line))
+
+anova(betadisper(d.nsd, sample_data(microbedat.nsd)$round))
+
+```
+
+Looks like there is evidence of community change in the low sugar diet over time, but no detectable change in the high sugar diet.
+
+## Changes in OTU abundance
+
+### As a function of fly emergence time
+
+```{r exmergence_time}
 library(DESeq2)
-microbedat.phyloseq <- phyloseq_to_deseq2(subset_samples(microbedat, diet == "hsd" & time > 0), ~  time )
-microbedat.phyloseq.time <- results(DESeq(microbedat.phyloseq, test="LRT", fitType="local", reduced = ~ 1))
+microbedat.phyloseq.time <- phyloseq_to_deseq2(subset_samples(microbedat, diet == "hsd" & time > 0), ~ time + line)
+microbedat.phyloseq.time <- results(DESeq(microbedat.phyloseq.time, test="LRT", fitType="local", reduced = ~ line))
 head(microbedat.phyloseq.time[order(microbedat.phyloseq.time$pvalue),])
 
+microbedat.phyloseq.time <- phyloseq_to_deseq2(subset_samples(microbedat, diet == "nsd" & time > 0), ~ time + line)
+microbedat.phyloseq.time <- results(DESeq(microbedat.phyloseq.time, test="LRT", fitType="local", reduced = ~ line))
+head(microbedat.phyloseq.time[order(microbedat.phyloseq.time$pvalue),])
 
-microbedat.phyloseq.round <- results(DESeq(microbedat.phyloseq, test="LRT", fitType="local", reduced = ~ selection + line))
+```
+No individual OTU is associated with fly emergence tim
+
+### As a function of round
+
+```{r phyloseq_round}
+microbedat.phyloseq.round <- phyloseq_to_deseq2(tax_glom(subset_samples(microbedat, diet == "hsd"), taxrank = "Family"), ~ round + line)
+microbedat.phyloseq.round <- results(DESeq(microbedat.phyloseq.round, test="LRT", fitType="local", reduced = ~  line))
 head(microbedat.phyloseq.round[order(microbedat.phyloseq.round$pvalue),])
 
-microbedat.phyloseq <- phyloseq_to_deseq2(tax_glom(subset_samples(microbedat, diet == "hsd"), taxrank = "Genus"), ~  round + selection + line)
-microbedat.phyloseq.selection <- results(DESeq(microbedat.phyloseq, test="LRT", fitType="local", reduced = ~ round + line))
-head(microbedat.phyloseq.selection[order(microbedat.phyloseq.selection$pvalue),])
-
-microbedat.phyloseq.round <- results(DESeq(microbedat.phyloseq, test="LRT", fitType="local", reduced = ~ selection + line))
+microbedat.phyloseq.round <- phyloseq_to_deseq2(tax_glom(subset_samples(microbedat, diet == "nsd"), taxrank = "Family"), ~ round + line)
+microbedat.phyloseq.round <- results(DESeq(microbedat.phyloseq.round, test="LRT", fitType="local", reduced = ~  line))
 head(microbedat.phyloseq.round[order(microbedat.phyloseq.round$pvalue),])
+
+tax_table(microbedat)[rownames(microbedat.phyloseq.round[which(microbedat.phyloseq.round$padj < 0.05),]),"Family"]
+```
+
+# Session info
+```{r sessioninfo, echo=F}
+sessionInfo <- devtools::session_info() 
+sessionInfo$platform 
+sessionInfo$packages %>% kable("html") %>% kable_styling() %>% scroll_box(height = "400px") 
 ```
