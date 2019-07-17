@@ -157,7 +157,9 @@ ggsave("figures/divnet.pdf")
 
 ### Alpha diversity using a less sophisticated approach
 ```{r naiveRichness}
-plot_richness(microbedat, "round", measures = "Shannon", color = "selection") + facet_grid(diet~., scales = "free_y", labeller=diet_labeller) + stat_smooth(method="lm")  + scale_color_manual(name = "Selection", labels = c("Random selection control", "Mean eclosion time"), values = c("dodgerblue", "orange")) + ylab("Shannon diversity") + xlab("Round of selection") + theme(axis.text.x = element_text(angle = 0, hjust = 0)) 
+(p <- plot_richness(microbedat, "round", measures = "Shannon", color = "selection") + facet_grid(diet~., scales = "free_y", labeller=diet_labeller) + stat_smooth(method="lm")  + scale_color_manual(name = "Selection", labels = c("Random selection control", "Mean eclosion time"), values = c("dodgerblue", "orange")) + ylab("Shannon diversity") + xlab("Round of selection") + theme(axis.text.x = element_text(angle = 0, hjust = 0)) )
+
+tab_model(lm(value ~ diet*round, data = p$data), pred.labels = c("Intercept (High-sugar diet)", "No-sugar diet", "Round of selection",  "Round of selection × No-sugar diet"))
 
 ggsave("figures/shannon.pdf", height = 6, width = 6)
 ```
