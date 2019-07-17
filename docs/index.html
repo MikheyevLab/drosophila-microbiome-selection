@@ -1571,7 +1571,12 @@ library(stringr)
 library(lme4)
 library(nlme)
 library(effects)
-library(sjPlot) #  mixed effects table summary https://strengejacke.wordpress.com/2015/06/05/beautiful-table-outputs-summarizing-mixed-effects-models-rstats/
+library(DESeq2)
+library(qiime2R)
+library(phyloseq)
+library(DivNet)
+library(vegan)
+library(sjPlot) #  mixed effects table summary
 
 theme_set(theme_minimal() + theme(legend.position = &quot;bottom&quot;, axis.title =  element_text(size = 20), axis.text =  element_text(size = 10), strip.text = element_text(size = 20)))</code></pre>
 <pre class="r"><code>flydata &lt;- read_csv(&quot;data/flydata.csv&quot;) %&gt;% mutate(id = paste(diet, selection, round, line, vial), time = emergence_time, replicate = paste(diet, selection, round, line))</code></pre>
@@ -1878,12 +1883,7 @@ summary(mod2)</code></pre>
 <h1>Microbial analysis</h1>
 <div id="load-data-manually-from-qiime2" class="section level2">
 <h2>Load data manually from qiime2</h2>
-<pre class="r"><code>library(qiime2R)
-library(phyloseq)
-library(DivNet)
-library(vegan)
-
-otus &lt;- read_qza(&quot;data/table.qza&quot;)
+<pre class="r"><code>otus &lt;- read_qza(&quot;data/table.qza&quot;)
 taxonomy &lt;- read_qza(&quot;data/taxonomy.qza&quot;)
 tree&lt;-read_qza(&quot;data/rooted-tree.qza&quot;)
 taxonomy&lt;-read_qza(&quot;data/taxonomy.qza&quot;)
@@ -2120,138 +2120,7 @@ d.nsd = UniFrac(microbedat.nsd)
 <h2>Changes in OTU abundance</h2>
 <div id="as-a-function-of-fly-emergence-time" class="section level3">
 <h3>As a function of fly emergence time</h3>
-<pre class="r"><code>library(DESeq2)</code></pre>
-<pre><code>## Loading required package: S4Vectors</code></pre>
-<pre><code>## Loading required package: stats4</code></pre>
-<pre><code>## Loading required package: BiocGenerics</code></pre>
-<pre><code>## Loading required package: parallel</code></pre>
-<pre><code>## 
-## Attaching package: &#39;BiocGenerics&#39;</code></pre>
-<pre><code>## The following objects are masked from &#39;package:parallel&#39;:
-## 
-##     clusterApply, clusterApplyLB, clusterCall, clusterEvalQ,
-##     clusterExport, clusterMap, parApply, parCapply, parLapply,
-##     parLapplyLB, parRapply, parSapply, parSapplyLB</code></pre>
-<pre><code>## The following objects are masked from &#39;package:dplyr&#39;:
-## 
-##     combine, intersect, setdiff, union</code></pre>
-<pre><code>## The following object is masked from &#39;package:gridExtra&#39;:
-## 
-##     combine</code></pre>
-<pre><code>## The following objects are masked from &#39;package:stats&#39;:
-## 
-##     IQR, mad, sd, var, xtabs</code></pre>
-<pre><code>## The following objects are masked from &#39;package:base&#39;:
-## 
-##     anyDuplicated, append, as.data.frame, basename, cbind,
-##     colMeans, colnames, colSums, dirname, do.call, duplicated,
-##     eval, evalq, Filter, Find, get, grep, grepl, intersect,
-##     is.unsorted, lapply, lengths, Map, mapply, match, mget, order,
-##     paste, pmax, pmax.int, pmin, pmin.int, Position, rank, rbind,
-##     Reduce, rowMeans, rownames, rowSums, sapply, setdiff, sort,
-##     table, tapply, union, unique, unsplit, which, which.max,
-##     which.min</code></pre>
-<pre><code>## 
-## Attaching package: &#39;S4Vectors&#39;</code></pre>
-<pre><code>## The following objects are masked from &#39;package:dplyr&#39;:
-## 
-##     first, rename</code></pre>
-<pre><code>## The following object is masked from &#39;package:tidyr&#39;:
-## 
-##     expand</code></pre>
-<pre><code>## The following object is masked from &#39;package:base&#39;:
-## 
-##     expand.grid</code></pre>
-<pre><code>## Loading required package: IRanges</code></pre>
-<pre><code>## 
-## Attaching package: &#39;IRanges&#39;</code></pre>
-<pre><code>## The following object is masked from &#39;package:phyloseq&#39;:
-## 
-##     distance</code></pre>
-<pre><code>## The following object is masked from &#39;package:nlme&#39;:
-## 
-##     collapse</code></pre>
-<pre><code>## The following objects are masked from &#39;package:dplyr&#39;:
-## 
-##     collapse, desc, slice</code></pre>
-<pre><code>## The following object is masked from &#39;package:purrr&#39;:
-## 
-##     reduce</code></pre>
-<pre><code>## Loading required package: GenomicRanges</code></pre>
-<pre><code>## Loading required package: GenomeInfoDb</code></pre>
-<pre><code>## Loading required package: SummarizedExperiment</code></pre>
-<pre><code>## Loading required package: Biobase</code></pre>
-<pre><code>## Welcome to Bioconductor
-## 
-##     Vignettes contain introductory material; view with
-##     &#39;browseVignettes()&#39;. To cite Bioconductor, see
-##     &#39;citation(&quot;Biobase&quot;)&#39;, and for packages &#39;citation(&quot;pkgname&quot;)&#39;.</code></pre>
-<pre><code>## 
-## Attaching package: &#39;Biobase&#39;</code></pre>
-<pre><code>## The following object is masked from &#39;package:phyloseq&#39;:
-## 
-##     sampleNames</code></pre>
-<pre><code>## Loading required package: DelayedArray</code></pre>
-<pre><code>## Loading required package: matrixStats</code></pre>
-<pre><code>## 
-## Attaching package: &#39;matrixStats&#39;</code></pre>
-<pre><code>## The following objects are masked from &#39;package:Biobase&#39;:
-## 
-##     anyMissing, rowMedians</code></pre>
-<pre><code>## The following object is masked from &#39;package:dplyr&#39;:
-## 
-##     count</code></pre>
-<pre><code>## Loading required package: BiocParallel</code></pre>
-<pre><code>## 
-## Attaching package: &#39;DelayedArray&#39;</code></pre>
-<pre><code>## The following objects are masked from &#39;package:matrixStats&#39;:
-## 
-##     colMaxs, colMins, colRanges, rowMaxs, rowMins, rowRanges</code></pre>
-<pre><code>## The following object is masked from &#39;package:purrr&#39;:
-## 
-##     simplify</code></pre>
-<pre><code>## The following objects are masked from &#39;package:base&#39;:
-## 
-##     aperm, apply</code></pre>
 <pre class="r"><code>microbedat.phyloseq.time &lt;- phyloseq_to_deseq2(subset_samples(microbedat, diet == &quot;hsd&quot; &amp; time &gt; 0), ~ time + line)</code></pre>
-<pre><code>## converting counts to integer mode</code></pre>
-<pre class="r"><code>microbedat.phyloseq.time &lt;- results(DESeq(microbedat.phyloseq.time, test=&quot;LRT&quot;, fitType=&quot;local&quot;, reduced = ~ line))</code></pre>
-<pre><code>## estimating size factors</code></pre>
-<pre><code>## estimating dispersions</code></pre>
-<pre><code>## gene-wise dispersion estimates</code></pre>
-<pre><code>## mean-dispersion relationship</code></pre>
-<pre><code>## final dispersion estimates</code></pre>
-<pre><code>## fitting model and testing</code></pre>
-<pre><code>## 1 rows did not converge in beta, labelled in mcols(object)$fullBetaConv. Use larger maxit argument with nbinomLRT</code></pre>
-<pre class="r"><code>head(microbedat.phyloseq.time[order(microbedat.phyloseq.time$pvalue),])</code></pre>
-<pre><code>## log2 fold change (MLE): line 10 vs 1 
-## LRT p-value: &#39;~ time + line&#39; vs &#39;~ line&#39; 
-## DataFrame with 6 rows and 6 columns
-##                                            baseMean   log2FoldChange
-##                                           &lt;numeric&gt;        &lt;numeric&gt;
-## 6e85901dd2e1836495031c13eee60be9     1.838561980917  1.4408641829833
-## edba123213f9cb766bcf6d5824be1ee3  0.266204729374217 5.59035687292075
-## 025d9fbae33d5280917fa596a724a59e  0.419098220946027 5.20284013297628
-## 7eb1df4a0a4af4d89aa9c5d5bf827444 0.0667129775651989 5.77004643602118
-## 9b8f4530fffd78453dd5ecee8247fbc4 0.0615812100601836 5.68151795349206
-## dcd6779433b0fa7cd022293db5020b1c 0.0280734810061517 4.80337858116856
-##                                             lfcSE              stat
-##                                         &lt;numeric&gt;         &lt;numeric&gt;
-## 6e85901dd2e1836495031c13eee60be9 7.95682057006132 0.491744603345353
-## edba123213f9cb766bcf6d5824be1ee3 9.07993126036466 0.308171171955557
-## 025d9fbae33d5280917fa596a724a59e 9.08038307549322 0.208280270035381
-## 7eb1df4a0a4af4d89aa9c5d5bf827444 9.08060363701912  0.19266361240301
-## 9b8f4530fffd78453dd5ecee8247fbc4  9.0827599273288 0.187572292490914
-## dcd6779433b0fa7cd022293db5020b1c 9.08534109484056 0.176060519849143
-##                                             pvalue      padj
-##                                          &lt;numeric&gt; &lt;numeric&gt;
-## 6e85901dd2e1836495031c13eee60be9 0.483150107333319         1
-## edba123213f9cb766bcf6d5824be1ee3 0.578804601474442         1
-## 025d9fbae33d5280917fa596a724a59e 0.648118662658257         1
-## 7eb1df4a0a4af4d89aa9c5d5bf827444 0.660708900867243         1
-## 9b8f4530fffd78453dd5ecee8247fbc4 0.664944905088029         1
-## dcd6779433b0fa7cd022293db5020b1c 0.674780857684129         1</code></pre>
-<pre class="r"><code>microbedat.phyloseq.time &lt;- phyloseq_to_deseq2(subset_samples(microbedat, diet == &quot;nsd&quot; &amp; time &gt; 0), ~ time + line)</code></pre>
 <pre><code>## converting counts to integer mode</code></pre>
 <pre class="r"><code>microbedat.phyloseq.time &lt;- results(DESeq(microbedat.phyloseq.time, test=&quot;LRT&quot;, fitType=&quot;local&quot;, reduced = ~ line))</code></pre>
 <pre><code>## estimating size factors</code></pre>
@@ -2266,28 +2135,65 @@ d.nsd = UniFrac(microbedat.nsd)
 ## DataFrame with 6 rows and 6 columns
 ##                                            baseMean    log2FoldChange
 ##                                           &lt;numeric&gt;         &lt;numeric&gt;
-## 3522f865a13250fb9ae82ab349215e42  0.466659025015246 -1.51369922042092
-## db9f0d4fb97420260553ad52e56ef69b   2.35654802836586 0.219059459409314
-## da0330f866215aba1a3431d32710c8ad  0.055577838083276  1.75494703515017
-## bec3d9f414a43d4e5713f124ebe6fbd4  0.517371365291763  1.72666396470477
-## 6f71fa91df22551812a5a5b3e60328e0 0.0722511895082588  1.72676722010295
-## 4b5b659217633db01ed3316c0c44fad6  0.369515441557166  1.71112075749759
-##                                             lfcSE               stat
-##                                         &lt;numeric&gt;          &lt;numeric&gt;
-## 3522f865a13250fb9ae82ab349215e42 6.88233961793231  0.291059872355632
-## db9f0d4fb97420260553ad52e56ef69b 5.08640337875538  0.169545978885623
-## da0330f866215aba1a3431d32710c8ad 6.90642401003295 0.0982647265349392
-## bec3d9f414a43d4e5713f124ebe6fbd4 6.90629350502804 0.0942805495989205
-## 6f71fa91df22551812a5a5b3e60328e0 6.90629368164894 0.0942699053025571
-## 4b5b659217633db01ed3316c0c44fad6 6.90622385260424 0.0922701830766464
+## 0bf86e80ab287770313005cfedc02aa6   24.7592917716998 0.792959035145591
+## 2cb918624b64a0f450864feb5ef39a1c  0.878361477464068  3.21023370832391
+## 7eb1df4a0a4af4d89aa9c5d5bf827444 0.0743967205000962   3.0540404867522
+## 9b8f4530fffd78453dd5ecee8247fbc4 0.0686738958462426  2.99240537233919
+## 3b4673bd2141d5ce0ac87fbee9a1c6ba  0.136370061541386  2.72699484726743
+## 802547545e68bfb764fb7e3a66d71374   1.29543463551755  2.56150914514678
+##                                             lfcSE              stat
+##                                         &lt;numeric&gt;         &lt;numeric&gt;
+## 0bf86e80ab287770313005cfedc02aa6 4.56651450273001 0.804998258767597
+## 2cb918624b64a0f450864feb5ef39a1c 8.16099939918329 0.208639052557686
+## 7eb1df4a0a4af4d89aa9c5d5bf827444 8.16244727825418  0.20626784308285
+## 9b8f4530fffd78453dd5ecee8247fbc4 8.16250160489022 0.197380475545874
+## 3b4673bd2141d5ce0ac87fbee9a1c6ba 8.16271817372288 0.187755912760666
+## 802547545e68bfb764fb7e3a66d71374 8.16302714417741 0.173307847146628
 ##                                             pvalue      padj
 ##                                          &lt;numeric&gt; &lt;numeric&gt;
-## 3522f865a13250fb9ae82ab349215e42 0.589542138407336         1
-## db9f0d4fb97420260553ad52e56ef69b 0.680515626160344         1
-## da0330f866215aba1a3431d32710c8ad 0.753922051768078         1
-## bec3d9f414a43d4e5713f124ebe6fbd4 0.758804264738242         1
-## 6f71fa91df22551812a5a5b3e60328e0  0.75881745813503         1
-## 4b5b659217633db01ed3316c0c44fad6 0.761310685932726         1</code></pre>
+## 0bf86e80ab287770313005cfedc02aa6 0.369603161261352         1
+## 2cb918624b64a0f450864feb5ef39a1c 0.647836198117257         1
+## 7eb1df4a0a4af4d89aa9c5d5bf827444 0.649708490881428         1
+## 9b8f4530fffd78453dd5ecee8247fbc4 0.656843611044843         1
+## 3b4673bd2141d5ce0ac87fbee9a1c6ba  0.66479095166259         1
+## 802547545e68bfb764fb7e3a66d71374 0.677188596965612         1</code></pre>
+<pre class="r"><code>microbedat.phyloseq.time &lt;- phyloseq_to_deseq2(subset_samples(microbedat, diet == &quot;nsd&quot; &amp; time &gt; 0), ~ time + line)</code></pre>
+<pre><code>## converting counts to integer mode</code></pre>
+<pre class="r"><code>microbedat.phyloseq.time &lt;- results(DESeq(microbedat.phyloseq.time, test=&quot;LRT&quot;, fitType=&quot;local&quot;, reduced = ~ line))</code></pre>
+<pre><code>## estimating size factors</code></pre>
+<pre><code>## estimating dispersions</code></pre>
+<pre><code>## gene-wise dispersion estimates</code></pre>
+<pre><code>## mean-dispersion relationship</code></pre>
+<pre><code>## final dispersion estimates</code></pre>
+<pre><code>## fitting model and testing</code></pre>
+<pre class="r"><code>head(microbedat.phyloseq.time[order(microbedat.phyloseq.time$pvalue),])</code></pre>
+<pre><code>## log2 fold change (MLE): line 10 vs 1 
+## LRT p-value: &#39;~ time + line&#39; vs &#39;~ line&#39; 
+## DataFrame with 6 rows and 6 columns
+##                                           baseMean     log2FoldChange
+##                                          &lt;numeric&gt;          &lt;numeric&gt;
+## 6012605abede608110aa60e12695d5a3 0.340575758609416   2.95370524067047
+## ddf83c0b68613f341902790a082bc5a3  1.25916863505581   2.17093562227027
+## b656988f920c0d400c660c5f337ffb67 0.319977917188704 -0.693104787863253
+## db9f0d4fb97420260553ad52e56ef69b  2.66350343321965 -0.477341066862258
+## 3411f0860e8e37277e8ff7d546337c3f 0.267604860112273  -1.15447903586402
+## e299dc11f1ef328a611946fb19e9422d 0.161589109470717   -1.0949771255914
+##                                             lfcSE               stat
+##                                         &lt;numeric&gt;          &lt;numeric&gt;
+## 6012605abede608110aa60e12695d5a3 7.04224473995456  0.162895345989963
+## ddf83c0b68613f341902790a082bc5a3 6.86706648601626  0.152606934512079
+## b656988f920c0d400c660c5f337ffb67 7.02904222212107 0.0883245434138615
+## db9f0d4fb97420260553ad52e56ef69b 5.72863054592215 0.0716390156040063
+## 3411f0860e8e37277e8ff7d546337c3f 7.02060399826492 0.0504821230376891
+## e299dc11f1ef328a611946fb19e9422d 7.02207742932735 0.0503916576102981
+##                                             pvalue      padj
+##                                          &lt;numeric&gt; &lt;numeric&gt;
+## 6012605abede608110aa60e12695d5a3 0.686504711714834         1
+## ddf83c0b68613f341902790a082bc5a3 0.696056423624934         1
+## b656988f920c0d400c660c5f337ffb67  0.76631805586275         1
+## db9f0d4fb97420260553ad52e56ef69b 0.788965154845989         1
+## 3411f0860e8e37277e8ff7d546337c3f 0.822226457457341         1
+## e299dc11f1ef328a611946fb19e9422d 0.822383156508776         1</code></pre>
 <p>No individual OTU is associated with fly emergence tim</p>
 </div>
 <div id="as-a-function-of-round" class="section level3">

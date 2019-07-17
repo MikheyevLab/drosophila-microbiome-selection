@@ -29,7 +29,12 @@ library(stringr)
 library(lme4)
 library(nlme)
 library(effects)
-library(sjPlot) #  mixed effects table summary https://strengejacke.wordpress.com/2015/06/05/beautiful-table-outputs-summarizing-mixed-effects-models-rstats/
+library(DESeq2)
+library(qiime2R)
+library(phyloseq)
+library(DivNet)
+library(vegan)
+library(sjPlot) #  mixed effects table summary
 
 theme_set(theme_minimal() + theme(legend.position = "bottom", axis.title =  element_text(size = 20), axis.text =  element_text(size = 10), strip.text = element_text(size = 20)))
 ```
@@ -101,11 +106,6 @@ The model is robust to dropping this round entirely
 ## Load data manually from qiime2
 
 ```{r microbial, message=F}
-library(qiime2R)
-library(phyloseq)
-library(DivNet)
-library(vegan)
-
 otus <- read_qza("data/table.qza")
 taxonomy <- read_qza("data/taxonomy.qza")
 tree<-read_qza("data/rooted-tree.qza")
@@ -218,7 +218,6 @@ Looks like there is evidence of community change in the low sugar diet over time
 ### As a function of fly emergence time
 
 ```{r exmergence_time}
-library(DESeq2)
 microbedat.phyloseq.time <- phyloseq_to_deseq2(subset_samples(microbedat, diet == "hsd" & time > 0), ~ time + line)
 microbedat.phyloseq.time <- results(DESeq(microbedat.phyloseq.time, test="LRT", fitType="local", reduced = ~ line))
 head(microbedat.phyloseq.time[order(microbedat.phyloseq.time$pvalue),])
