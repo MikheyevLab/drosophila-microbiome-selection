@@ -26,8 +26,10 @@ library(scales)
 library(RColorBrewer)
 library(tidyverse) #dplyr package included
 library(stringr)
+library(lme4)
 library(nlme)
 library(effects)
+library(sjPlot) #  mixed effects table summary https://strengejacke.wordpress.com/2015/06/05/beautiful-table-outputs-summarizing-mixed-effects-models-rstats/
 
 theme_set(theme_minimal() + theme(legend.position = "bottom", axis.title =  element_text(size = 20), axis.text =  element_text(size = 10), strip.text = element_text(size = 20)))
 ```
@@ -43,9 +45,10 @@ flydata <- read_csv("data/flydata.csv") %>% mutate(id = paste(diet, selection, r
 flydataFactors <- flydata %>% mutate(day = ifelse(time<225, 1, ifelse(time<240, 2, ifelse(time<270, 3, 4)))) %>% as.data.frame()
 flydataFactors$selection <- factor(flydataFactors$selection)
 flydataFactors$diet <- factor(flydataFactors$diet)
-mod <- lme(time ~ round * diet * selection , random=~1|line/replicate, method="REML", data = flydata )
-summary(mod)
+mod <- lmer(time ~ round * diet * selection + (1|line:replicate), data = flydata )
 hist(resid(mod))
+
+tab_model(mod, show.icc = FALSE, show.re.var = FALSE, pred.labels = c("Intercept (High-sugar diet, No-selection control)", "Round of selection", "No-sugar diet", "Selection treatment", "Round of selection × No-sugar diet", "Round of selection × Selection treatment", "No-sugar diet × Selection treatment", "Round of selection × No-sugar diet× Selection treatment"))
 
 effect(term="round:selection", xlevels=list(selection=c("selection","noselection")), mod=mod) %>% as.data.frame() %>% ggplot(aes(round,fit,color=selection))+geom_line()
 
@@ -102,7 +105,7 @@ library(qiime2R)
 library(phyloseq)
 library(DivNet)
 library(vegan)
-# microbedat <- qza_to_phyloseq(features = "data/table.qza", taxonomy="data/taxonomy.qza", tree = "data/rooted-tree.qza", metadata = "data/metadata.txt") %>% subset_samples(Diet != "CD")
+
 otus <- read_qza("data/table.qza")
 taxonomy <- read_qza("data/taxonomy.qza")
 tree<-read_qza("data/rooted-tree.qza")
@@ -131,38 +134,38 @@ microbedat <- phyloseq(otu_table(otus$data, taxa_are_rows = T), phy_tree(tree$da
 
 These are not super-useful, but highlight the difference between diets
 
-```{r alpha, message = FALSE, warning = FALSE, results = 'hide' }
+```{r alpha, message = FALSE, warning = FALSE, results = 'hide'}
 abundantClasses <- psmelt(microbedat) %>% group_by(Genus) %>% summarize(frac = n() / nrow(.)) %>% filter(frac > 0.01) %>% na.omit() %>% pull(Genus)
 
-psmelt(microbedat) %>% mutate(round = round ) %>%filter(Genus %in% abundantClasses) %>% ggplot(aes_string(x = "round", y = "Abundance", fill = "Genus")) + geom_bar(stat = "identity", position = "fill") + theme(axis.text.x = element_text(angle = -90, hjust = 0)) + scale_y_sqrt() + ylab("Fraction of community") + xlab("Round of selection") + facet_grid(diet~selection, scales="free", labeller=diet_labeller) + scale_fill_brewer(palette = "Set3")
-#ggsave("figures/barplot.pdf", height = 7, width = 7)
+psmelt(microbedat) %>% mutate(round = round ) %>%filter(Genus %in% abundantClasses) %>% ggplot(aes_string(x = "round", y = "Abundance", fill = "Genus")) + geom_bar(stat = "identity", position = "fill") + theme(axis.text.x = element_text(angle = 0, hjust = 0), legend.text=element_text(size=rel(1)), legend.title=element_blank()) + scale_y_sqrt() + ylab(expression(sqrt("Fraction of community"))) + xlab("Round of selection") + facet_grid(diet~selection, scales="free", labeller=diet_labeller) + scale_fill_brewer(palette = "Set3") 
+ggsave("figures/barplot.pdf", height = 7, width = 7)
 ```
 
 ## Alpha diversity
 
-```{r divnetAll, cache=T, message=F}
+```{r divnetAll, cache=T, message = FALSE, warning = FALSE, results = 'hide'}
 divnet_all <-  divnet(tax_glom(microbedat, taxrank = "Genus"), X = "roundSelectionDiet", ncores = 20)
 
 divnet_summary <- divnet_all$shannon %>% summary %>% left_join(metadata) %>% group_by(roundSelectionDiet) %>% summarize(alpha = estimate[1], lower = lower[1], upper = upper[1], round = round[1], selection = selection[1], diet = diet[1]) 
-
-divnet_summary %>% ggplot(aes(selection, alpha, color = selection)) + geom_point() + geom_linerange(aes(ymin = lower, ymax = upper)) + facet_grid(diet~round, scales = "free") + theme_minimal() + theme(axis.text.x=element_blank()) + xlab("Round of evolution") + guides(color = F)
-
-#ggsave("figures/divnet.pdf")
-summary(lm(alpha ~ round + diet + selection,  data=divnet_summary))
 ```
 
+
+```{r divnetAllSummary}
+divnet_summary %>% ggplot(aes(selection, alpha, color = selection)) + geom_point() + geom_linerange(aes(ymin = lower, ymax = upper)) + facet_grid(diet~round, scales = "free") + theme_minimal() + theme(axis.text.x=element_blank()) + xlab("Round of evolution") + guides(color = F)
+ggsave("figures/divnet.pdf")
+```
 
 ### Alpha diversity using a less sophisticated approach
 ```{r naiveRichness}
 plot_richness(microbedat, "round", measures = "Shannon", color = "selection") + facet_grid(diet~., scales = "free_y", labeller=diet_labeller) + stat_smooth(method="lm")  + scale_color_manual(name = "Selection", labels = c("Random selection control", "Mean eclosion time"), values = c("dodgerblue", "orange")) + ylab("Shannon diversity") + xlab("Round of selection") + theme(axis.text.x = element_text(angle = 0, hjust = 0)) 
 
-#ggsave("figures/shannon.pdf", height = 6, width = 6)
+ggsave("figures/shannon.pdf", height = 6, width = 6)
 ```
 
 ## Examining microbial community differentiation as in the mixed model
 
 ```{r adonis}
-d = UniFrac(tax_glom(microbedat, taxrank = "Family"))
+d = UniFrac(tax_glom(microbedat, taxrank = "Genus"))
 d.mds <- metaMDS(d, zerodist=ignore)
 
 scrs <- cbind(metadata, data.frame(MDS1 = d.mds$points[,1], MDS2 = d.mds$points[,2])) 
@@ -184,6 +187,7 @@ ggplot(scrs, aes(x = MDS1, y = MDS2, shape = selection, color = factor(round))) 
 
 anova(betadisper(d, sample_data(microbedat)$diet))
 plot(betadisper(d, sample_data(microbedat)$diet))
+microbes.adonis
 ```
 
 There are dispersion differences between the diets, so let's analyze them separately
@@ -191,7 +195,7 @@ There are dispersion differences between the diets, so let's analyze them separa
 ### HSD permutation test
 
 ```{r}
-microbedat.hsd <- tax_glom(subset_samples(microbedat, diet == "hsd"), taxrank = "Family")  
+microbedat.hsd <- tax_glom(subset_samples(microbedat, diet == "hsd"), taxrank = "Genus")  
 d.hsd = UniFrac(microbedat.hsd)
 (hsd.adonis <- adonis2(d.hsd ~  selection * round, as(sample_data(microbedat.hsd), "data.frame"), permutations = 10000, strata = line))
 ```
@@ -199,7 +203,7 @@ d.hsd = UniFrac(microbedat.hsd)
 ### NSD permutation test
 
 ```{r}
-microbedat.nsd <- tax_glom(subset_samples(microbedat, diet == "nsd"), taxrank = "Family")  
+microbedat.nsd <- tax_glom(subset_samples(microbedat, diet == "nsd"), taxrank = "Genus")  
 d.nsd = UniFrac(microbedat.nsd)
 (hsd.adonis <- adonis2(d.nsd ~  selection * round, as(sample_data(microbedat.nsd), "data.frame"), permutations = 10000, strata = line))
 
@@ -229,15 +233,14 @@ No individual OTU is associated with fly emergence tim
 ### As a function of round
 
 ```{r phyloseq_round}
-microbedat.phyloseq.round <- phyloseq_to_deseq2(tax_glom(subset_samples(microbedat, diet == "hsd"), taxrank = "Family"), ~ round + line)
+microbedat.phyloseq.round <- phyloseq_to_deseq2(tax_glom(subset_samples(microbedat, diet == "hsd"), taxrank = "Genus"), ~ round + line)
 microbedat.phyloseq.round <- results(DESeq(microbedat.phyloseq.round, test="LRT", fitType="local", reduced = ~  line))
 head(microbedat.phyloseq.round[order(microbedat.phyloseq.round$pvalue),])
 
-microbedat.phyloseq.round <- phyloseq_to_deseq2(tax_glom(subset_samples(microbedat, diet == "nsd"), taxrank = "Family"), ~ round + line)
+microbedat.phyloseq.round <- phyloseq_to_deseq2(tax_glom(subset_samples(microbedat, diet == "nsd"), taxrank = "Genus"), ~ round + line)
 microbedat.phyloseq.round <- results(DESeq(microbedat.phyloseq.round, test="LRT", fitType="local", reduced = ~  line))
 head(microbedat.phyloseq.round[order(microbedat.phyloseq.round$pvalue),])
-
-tax_table(microbedat)[rownames(microbedat.phyloseq.round[which(microbedat.phyloseq.round$padj < 0.05),]),"Family"]
+head(microbedat.phyloseq.round[order(microbedat.phyloseq.round$pvalue),])
 ```
 
 # Session info
