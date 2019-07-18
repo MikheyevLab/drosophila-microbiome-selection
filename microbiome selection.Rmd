@@ -78,11 +78,11 @@ effect(term="round:diet:selection", xlevels=list(selection=c("selection","nosele
   ggplot(aes(round-1, fit, color=selection)) + geom_boxplot(aes(round-1, time, group = interaction(round,selection)), alpha = 0.1) +
   geom_line() + geom_ribbon(aes(ymin=lower,ymax=upper, linetype = NA), alpha=0.3) + 
   facet_grid(diet~., scales="free", labeller=diet_labeller) + 
-  scale_color_manual(name = "Selection", labels = c("Random selection control", "Mean eclosion time"), values = c("dodgerblue", "orange")) + ylab("Eclosion time (hours)") + xlab("Round of selection") + guides(alpha = F, color=guide_legend(override.aes=list(fill=NA))) 
+  scale_color_manual( labels = c("Control", "Selection"), values = c("dodgerblue", "orange")) + ylab("Eclosion time (hours)") + xlab("Round") + guides(alpha = F, color=guide_legend(override.aes=list(fill=NA)), legend.title=element_blank())
 
 effect(xlevels=list(round=c(1,5)), term="round:diet",  mod=mod) %>% as.data.frame()
 
-#ggsave("figures/modeFit.pdf", height=7, width =5)
+ggsave("figures/modeFit.pdf", height=7, width =5)
 
 ggplot(flydataFactors, aes(day, fill=selection))+geom_histogram(stat="count", position="dodge") +facet_grid(.~diet) 
 
@@ -137,7 +137,10 @@ These are not super-useful, but highlight the difference between diets
 ```{r alpha, message = FALSE, warning = FALSE, results = 'hide'}
 abundantClasses <- psmelt(microbedat) %>% group_by(Genus) %>% summarize(frac = n() / nrow(.)) %>% filter(frac > 0.01) %>% na.omit() %>% pull(Genus)
 
-psmelt(microbedat) %>% mutate(round = round ) %>%filter(Genus %in% abundantClasses) %>% ggplot(aes_string(x = "round", y = "Abundance", fill = "Genus")) + geom_bar(stat = "identity", position = "fill") + theme(axis.text.x = element_text(angle = 0, hjust = 0), legend.text=element_text(size=rel(1)), legend.title=element_blank()) + scale_y_sqrt() + ylab(expression(sqrt("Fraction of community"))) + xlab("Round of selection") + facet_grid(diet~selection, scales="free", labeller=diet_labeller) + scale_fill_brewer(palette = "Set3") 
+#https://personal.sron.nl/~pault/data/colourschemes.pdf
+mycolsBright <- c( "Acetobacter" = "#4477AA", "Acinetobacter" = "#66CCEE",  "Lactobacillus" = "#228833"  , "Pseudomonas" = "#CCBB44",     "Staphylococcus" = "#EE6677")
+
+psmelt(microbedat) %>%filter(Genus %in% abundantClasses) %>% ggplot(aes_string(x = "round", y = "Abundance", fill = "Genus")) + geom_bar(stat = "identity", position = "fill") + theme(axis.text.x = element_text(angle = 0, hjust = 0), legend.text=element_text(size=rel(1)), legend.title=element_blank()) + scale_y_sqrt() + ylab(expression(sqrt("Fraction of community"))) + xlab("Round") + facet_grid(diet~selection, scales="free", labeller=diet_labeller) + scale_fill_manual(values = mycolsBright) 
 ggsave("figures/barplot.pdf", height = 7, width = 7)
 ```
 
@@ -157,7 +160,7 @@ ggsave("figures/divnet.pdf")
 
 ### Alpha diversity using a less sophisticated approach
 ```{r naiveRichness}
-(p <- plot_richness(microbedat, "round", measures = "Shannon", color = "selection") + facet_grid(diet~., scales = "free_y", labeller=diet_labeller) + stat_smooth(method="lm")  + scale_color_manual(name = "Selection", labels = c("Random selection control", "Mean eclosion time"), values = c("dodgerblue", "orange")) + ylab("Shannon diversity") + xlab("Round of selection") + theme(axis.text.x = element_text(angle = 0, hjust = 0)) )
+(p <- plot_richness(microbedat, "round", measures = "Shannon", color = "selection") + facet_grid(diet~., scales = "free_y") + stat_smooth(method="lm")  + scale_color_manual(name = "Selection", labels = c("Control", "Selection"), values = c("dodgerblue", "orange")) + ylab("Shannon diversity") + xlab("Round") + theme(legend.title=element_blank(), axis.text.x = element_text(angle = 0, hjust = 0)) )
 
 tab_model(lm(value ~ diet*round, data = p$data), pred.labels = c("Intercept (High-sugar diet)", "No-sugar diet", "Round of selection",  "Round of selection × No-sugar diet"))
 
