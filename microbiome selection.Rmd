@@ -53,7 +53,7 @@ flydataFactors$diet <- factor(flydataFactors$diet)
 mod <- lmer(time ~ round * diet * selection + (1|line:replicate), data = flydata )
 hist(resid(mod))
 
-tab_model(mod, show.icc = FALSE, show.re.var = FALSE, pred.labels = c("Intercept (High-sugar diet, No-selection control)", "Round of selection", "No-sugar diet", "Selection treatment", "Round of selection × No-sugar diet", "Round of selection × Selection treatment", "No-sugar diet × Selection treatment", "Round of selection × No-sugar diet× Selection treatment"))
+tab_model(mod, show.icc = FALSE, show.re.var = FALSE, pred.labels = c("Intercept (High-sugar diet, No-selection control)", "Selection cycle", "No-sugar diet", "Selection treatment", "Selection cycle × No-sugar diet", "Selection cycle × Selection treatment", "No-sugar diet × Selection treatment", "Selection cycle × No-sugar diet× Selection treatment"))
 
 effect(term="round:selection", xlevels=list(selection=c("selection","noselection")), mod=mod) %>% as.data.frame() %>% ggplot(aes(round,fit,color=selection))+geom_line()
 
@@ -78,7 +78,7 @@ effect(term="round:diet:selection", xlevels=list(selection=c("selection","nosele
   ggplot(aes(round-1, fit, color=selection)) + geom_boxplot(aes(round-1, time, group = interaction(round,selection)), alpha = 0.1) +
   geom_line() + geom_ribbon(aes(ymin=lower,ymax=upper, linetype = NA), alpha=0.3) + 
   facet_grid(diet~., scales="free", labeller=diet_labeller) + 
-  scale_color_manual( labels = c("Control", "Selection"), values = c("dodgerblue", "orange")) + ylab("Eclosion time (hours)") + xlab("Round") + guides(alpha = F, color=guide_legend(override.aes=list(fill=NA)), legend.title=element_blank())
+  scale_color_manual( labels = c("Control", "Selection"), values = c("dodgerblue", "orange")) + ylab("Eclosion time (hours)") + xlab("Selection cycle") + guides(alpha = F, color=guide_legend(override.aes=list(fill=NA)), legend.title=element_blank())
 
 effect(xlevels=list(round=c(1,5)), term="round:diet",  mod=mod) %>% as.data.frame()
 
@@ -140,7 +140,7 @@ abundantClasses <- psmelt(microbedat) %>% group_by(Genus) %>% summarize(frac = n
 #https://personal.sron.nl/~pault/data/colourschemes.pdf
 mycolsBright <- c( "Acetobacter" = "#4477AA", "Acinetobacter" = "#66CCEE",  "Lactobacillus" = "#228833"  , "Pseudomonas" = "#CCBB44",     "Staphylococcus" = "#EE6677")
 
-psmelt(microbedat) %>%filter(Genus %in% abundantClasses) %>% ggplot(aes_string(x = "round", y = "Abundance", fill = "Genus")) + geom_bar(stat = "identity", position = "fill") + theme(axis.text.x = element_text(angle = 0, hjust = 0), legend.text=element_text(size=rel(1)), legend.title=element_blank()) + scale_y_sqrt() + ylab(expression(sqrt("Fraction of community"))) + xlab("Round") + facet_grid(diet~selection, scales="free", labeller=diet_labeller) + scale_fill_manual(values = mycolsBright) 
+psmelt(microbedat) %>%filter(Genus %in% abundantClasses) %>% ggplot(aes_string(x = "round", y = "Abundance", fill = "Genus")) + geom_bar(stat = "identity", position = "fill") + theme(axis.text.x = element_text(angle = 0, hjust = 0), legend.text=element_text(size=rel(1)), legend.title=element_blank()) + scale_y_sqrt() + ylab(expression(sqrt("Fraction of community"))) + xlab("Selection cycle") + facet_grid(diet~selection, scales="free", labeller=diet_labeller) + scale_fill_manual(values = mycolsBright) 
 ggsave("figures/barplot.pdf", height = 7, width = 7)
 ```
 
@@ -160,9 +160,9 @@ ggsave("figures/divnet.pdf")
 
 ### Alpha diversity using a less sophisticated approach
 ```{r naiveRichness}
-(p <- plot_richness(microbedat, "round", measures = "Shannon", color = "selection") + facet_grid(diet~., scales = "free_y") + stat_smooth(method="lm")  + scale_color_manual(name = "Selection", labels = c("Control", "Selection"), values = c("dodgerblue", "orange")) + ylab("Shannon diversity") + xlab("Round") + theme(legend.title=element_blank(), axis.text.x = element_text(angle = 0, hjust = 0)) )
+(p <- plot_richness(microbedat, "round", measures = "Shannon", color = "selection") + facet_grid(diet~., scales = "free_y") + stat_smooth(method="lm")  + scale_color_manual(name = "Selection", labels = c("Control", "Selection"), values = c("dodgerblue", "orange")) + ylab("Shannon diversity") + xlab("Selection cycle") + theme(legend.title=element_blank(), axis.text.x = element_text(angle = 0, hjust = 0)) )
 
-tab_model(lm(value ~ diet*round, data = p$data), pred.labels = c("Intercept (High-sugar diet)", "No-sugar diet", "Round of selection",  "Round of selection × No-sugar diet"))
+tab_model(lm(value ~ diet*round, data = p$data), pred.labels = c("Intercept (High-sugar diet)", "No-sugar diet", "Selection cycle",  "Selection cycle × No-sugar diet"))
 
 ggsave("figures/shannon.pdf", height = 6, width = 6)
 ```
@@ -245,6 +245,61 @@ microbedat.phyloseq.round <- phyloseq_to_deseq2(tax_glom(subset_samples(microbed
 microbedat.phyloseq.round <- results(DESeq(microbedat.phyloseq.round, test="LRT", fitType="local", reduced = ~  line))
 head(microbedat.phyloseq.round[order(microbedat.phyloseq.round$pvalue),])
 head(microbedat.phyloseq.round[order(microbedat.phyloseq.round$pvalue),])
+```
+
+# Estimating selection coefficients and heritability
+
+## Selection coefficient
+
+```{r selection}
+all_means<-read.csv("column_level_means_allfiles.csv",header=TRUE)
+average_means<-all_means%>%group_by(fullname,generation,line)%>%summarise_at(.vars = names(.)[2],funs(mean(., na.rm=TRUE)))
+
+#adding the selected/choosen vial informtion-
+choosen_means<-read.csv("meaneclosion_parentandoffspring_data_linear.csv",header=TRUE)
+
+#joining the two files- #all.y=TRUE as we need to include the zero means
+selection2<-merge(average_means,choosen_means,by.x=c("generation","fullname","line"),by.y=c("Generation","Diet","Line"),all.y=TRUE)
+
+selection2[is.na(selection2)] <- 0
+
+#selection-coefficient calculations-
+selection_coefficient<-selection2%>%mutate(selection_coefficient=vial_mean/mean_of_each_column)
+selection_coefficient$selection<-unlist(lapply(strsplit(as.character(selection_coefficient$fullname),split="_"),"[",2))
+selection_coefficient$diet<-unlist(lapply(strsplit(as.character(selection_coefficient$fullname),split="_"),"[",1))
+
+selected_only<-selection_coefficient%>%filter(selection=="selection")
+selected_only<-selected_only%>%filter(!selection_coefficient==Inf)
+
+#some summations-
+selected_summation<-selected_only %>% group_by(diet,generation) %>% summarise_at(vars(mean_of_each_column,vial_mean), sum)
+selected_summation$mean_of_each_column<-selected_summation$mean_of_each_column/10
+selected_summation$vial_mean<-selected_summation$vial_mean/10
+selected_summation<-selected_summation%>%mutate(selection_coefficient=vial_mean-mean_of_each_column)
+
+(s<-mean(selected_summation$selection_coefficient)) #selection coefficient
+sd(selected_summation$selection_coefficient)
+
+```
+
+## 'Heritability'
+
+This is the correlation between phenotypes in source and donor media
+
+```{r heritability}
+parent_offspring<-read.csv("meaneclosion_parentandoffspring_Data_FOandF1.csv",header=TRUE)
+parent_offspring$media<-unlist(lapply(strsplit(as.character(parent_offspring$Diet),split="_"),"[",1))
+parent_offspring$selection<-unlist(lapply(strsplit(as.character(parent_offspring$Diet),split="_"),"[",2))
+noselected<-parent_offspring%>%filter(selection=="noselection")
+noselected2<-noselected%>%filter(F0_parent_mean!=0)
+noselected3<-noselected2%>%filter(F1_child_mean!=0)
+
+x <- noselected3$F0_parent_mean
+y <- noselected3$F1_child_mean
+(h2 <-cor(x, y)^2) #heritability
+
+h2*s
+
 ```
 
 # Session info
